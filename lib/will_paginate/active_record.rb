@@ -130,21 +130,22 @@ module WillPaginate
         per_page = options.delete(:per_page) || self.per_page
         total    = options.delete(:total_entries)
 
+        custom_offset = options.delete(:offset)
         count_options = options.delete(:count)
         options.delete(:page)
 
-        rel = limit(per_page.to_i).page(pagenum)
+        rel = limit(per_page.to_i).page(pagenum, custom_offset)
         rel = rel.apply_finder_options(options) if options.any?
         rel.wp_count_options = count_options    if count_options
         rel.total_entries = total.to_i          unless total.blank?
         rel
       end
 
-      def page(num)
+      def page(num, custom_offset = 0)
         rel = scoped.extending(RelationMethods)
         pagenum = ::WillPaginate::PageNumber(num.nil? ? 1 : num)
         per_page = rel.limit_value || self.per_page
-        rel = rel.offset(pagenum.to_offset(per_page).to_i)
+        rel = rel.offset(pagenum.to_offset(per_page).to_i + custom_offset)
         rel = rel.limit(per_page) unless rel.limit_value
         rel.current_page = pagenum
         rel
