@@ -129,19 +129,19 @@ module WillPaginate
         pagenum  = options.fetch(:page) { raise ArgumentError, ":page parameter required" }
         per_page = options.delete(:per_page) || self.per_page
         total    = options.delete(:total_entries)
-
         custom_offset = options.delete(:offset)
+
         count_options = options.delete(:count)
         options.delete(:page)
 
-        rel = limit(per_page.to_i).page(pagenum, custom_offset)
+        rel = limit(per_page.to_i).page(pagenum, custom_offset.nil? ? 0 : custom_offset)
         rel = rel.apply_finder_options(options) if options.any?
         rel.wp_count_options = count_options    if count_options
         rel.total_entries = total.to_i          unless total.blank?
         rel
       end
 
-      def page(num, custom_offset = 0)
+      def page(num, custom_offset)
         rel = scoped.extending(RelationMethods)
         pagenum = ::WillPaginate::PageNumber(num.nil? ? 1 : num)
         per_page = rel.limit_value || self.per_page
