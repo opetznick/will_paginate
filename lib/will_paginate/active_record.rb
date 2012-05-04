@@ -73,7 +73,7 @@ module WillPaginate
 
       # workaround for Active Record 3.0
       def size
-        if !loaded? and limit_value
+        if !loaded? and limit_value and group_values.empty?
           [super, limit_value].min
         else
           super
@@ -83,12 +83,9 @@ module WillPaginate
       # overloaded to be pagination-aware
       def empty?
         if !loaded? and offset_value
-          rel_count = count
-          if rel_count.respond_to?(:size) and !rel_count.is_a?(Integer)
-            rel_count.size <= offset_value
-          else
-            rel_count <= offset_value
-          end
+          result = count
+          result = result.size if result.respond_to?(:size) and !result.is_a?(Integer)
+          result <= offset_value
         else
           super
         end
@@ -168,25 +165,34 @@ module WillPaginate
       # application.
       # 
       def paginate_by_sql(sql, options)
-        pagenum  = options.fetch(:page) { raise ArgumentError, ":page parameter required" }
+        pagenum  = options.fetch(:page) { raise ArgumentError, ":page parameter required" } || 1
         per_page = options[:per_page] || self.per_page
         total    = options[:total_entries]
 
         WillPaginate::Collection.create(pagenum, per_page, total) do |pager|
           query = sanitize_sql(sql.dup)
           original_query = query.dup
+          oracle = self.connection.adapter_name =~ /^(oracle|oci$)/i
+
           # add limit, offset
-          query << " LIMIT #{pager.per_page} OFFSET #{pager.offset}"
+          if oracle
+            query = <<-SQL
+              SELECT * FROM (
+                SELECT rownum rnum, a.* FROM (#{query}) a
+                WHERE rownum <= #{pager.offset + pager.per_page}
+              ) WHERE rnum >= #{pager.offset}
+            SQL
+          else
+            query << " LIMIT #{pager.per_page} OFFSET #{pager.offset}"
+          end
+
           # perfom the find
           pager.replace find_by_sql(query)
 
           unless pager.total_entries
-            count_query = original_query.sub /\bORDER\s+BY\s+[\w`,\s]+$/mi, ''
+            count_query = original_query.sub /\bORDER\s+BY\s+[\w`,\s.]+$/mi, ''
             count_query = "SELECT COUNT(*) FROM (#{count_query})"
-
-            unless self.connection.adapter_name =~ /^(oracle|oci$)/i
-              count_query << ' AS count_table'
-            end
+            count_query << ' AS count_table' unless oracle
             # perform the count query
             pager.total_entries = count_by_sql(count_query)
           end

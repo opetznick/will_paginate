@@ -146,6 +146,13 @@ describe WillPaginate::ActiveRecord do
       }.should run_queries(1)
     end
 
+    it "supports `size` for grouped queries" do
+      topics = Topic.group(:project_id).paginate :page => 1, :per_page => 3
+      lambda {
+        topics.size.should == {nil=>2, 1=>2}
+      }.should run_queries(1)
+    end
+
     it "overrides total_entries count with a fixed value" do
       lambda {
         topics = Topic.paginate :page => 1, :per_page => 3, :total_entries => 999
@@ -212,14 +219,24 @@ describe WillPaginate::ActiveRecord do
       }.should run_queries(1)
     end
 
+    it "defaults to page 1" do
+      sql = "select content from topics"
+      topics = Topic.paginate_by_sql sql, :page => nil, :per_page => 1
+      topics.current_page.should == 1
+      topics.size.should == 1
+    end
+
     it "should strip the order when counting" do
       lambda {
-        sql = "select id, title, content from topics order by title"
+        sql = "select id, title, content from topics order by topics.title"
         topics = Topic.paginate_by_sql sql, :page => 1, :per_page => 2
         topics.first.should == topics(:ar)
       }.should run_queries(2)
+
+      $query_sql.last.should include('COUNT')
+      $query_sql.last.should_not include('order by topics.title')
     end
-    
+
     it "shouldn't change the original query string" do
       query = 'select * from topics where 1 = 2'
       original_query = query.dup
@@ -262,7 +279,8 @@ describe WillPaginate::ActiveRecord do
   end
   
   it "should paginate with :conditions" do
-    result = Topic.paginate :page => 1, :conditions => ["created_at > ?", 30.minutes.ago]
+    result = Topic.paginate :page => 1, :order => 'id ASC',
+      :conditions => ["created_at > ?", 30.minutes.ago]
     result.should == topics(:rails, :ar)
     result.total_pages.should == 1
   end
